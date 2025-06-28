@@ -38,7 +38,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ===== Боковая панель (только язык и режим) =====
+# ===== Боковая панель =====
 with st.sidebar:
     lang = st.selectbox(
         label="Language",
@@ -59,7 +59,7 @@ with st.sidebar:
 # ===== Заголовок =====
 st.title(T["app_title"])
 
-# ===== Подвал (footer): логотип, автор, Telegram =====
+# ===== Подвал =====
 logo_path = "static/image/logo.png"
 if os.path.exists(logo_path):
     with open(logo_path, "rb") as f:
@@ -134,19 +134,38 @@ def recognize_face(img):
         return known_face_names[np.argmin(distances)]
     return None
 
+# ===== Межзрачковое расстояние =====
+def get_eye_distance(img):
+    rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    landmarks_list = face_recognition.face_landmarks(rgb_img)
+    if not landmarks_list:
+        return None
+    landmarks = landmarks_list[0]
+    if "left_eye" in landmarks and "right_eye" in landmarks:
+        left_eye = np.mean(landmarks["left_eye"], axis=0)
+        right_eye = np.mean(landmarks["right_eye"], axis=0)
+        return np.linalg.norm(np.array(left_eye) - np.array(right_eye))
+    return None
+
 # ===== Обработка кадра =====
-def process_frame(frame, threshold=0.5):
+def process_frame(frame, threshold=0.5, eye_dist_thresh=40):
     img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     bbox = face_detector([img_rgb])[0]
     if bbox.shape[0] == 0:
         return frame
     bbox = bbox.flatten()[:4].astype(int)
     face_crop = increased_crop(img_rgb, bbox)
+
     pred = anti_spoof([face_crop])[0]
     score = pred[0][0]
     label = np.argmax(pred)
 
-    if label == 0 and score > threshold:
+    eye_dist = get_eye_distance(face_crop)
+
+    if eye_dist is not None and eye_dist < eye_dist_thresh:
+        label_text = f"TOO CLOSE (Eyes: {eye_dist:.1f})"
+        color = (0, 165, 255)
+    elif label == 0 and score > threshold:
         name = recognize_face(face_crop) or "Unrecognized"
         label_text = f"REAL [{name}] ({score:.2f})"
         color = (0, 255, 0)
@@ -182,7 +201,7 @@ while cap.isOpened():
     if not ret:
         st.warning("Не удалось захватить видео с источника")
         break
-    frame = cv2.resize(frame, (640, 480), interpolation=cv2.INTER_LINEAR)
+    frame = cv2.resize(frame, (480, 360), interpolation=cv2.INTER_LINEAR)
     processed = process_frame(frame)
     FRAME_WINDOW.image(processed, channels="BGR")
 
