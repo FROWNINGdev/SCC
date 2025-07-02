@@ -505,8 +505,19 @@
         startBtn.innerText = translations[lang].start;
         stopBtn.innerText = translations[lang].stop;
         document.querySelector('.footer .slogan').innerText = translations[lang].main_slogan;
-        // Заголовок камеры всегда статичен
-        videoTitle.innerText = "Камера";
+        videoTitle.innerText = translations[lang].video_source;
+
+        // Статус сервера, IP и SSL
+        serverStatus.innerHTML = '🟢 ' + (lang === 'RU' ? 'Активен' : lang === 'UZ' ? "Faol" : "Active");
+        serverIp.innerText = "192.168.1.10";
+        sslStatus.innerText = (lang === 'RU' ? "Включён" : lang === 'UZ' ? "Yoqilgan" : "Enabled");
+        // Информационный блок
+        document.querySelector('.sidebar .info-block').lastElementChild.innerHTML =
+            lang === 'RU'
+                ? "Все действия логируются.<br>Доступ только для сотрудников."
+                : lang === 'UZ'
+                    ? "Barcha harakatlar loglanadi.<br>Faqat xodimlar uchun."
+                    : "All actions are logged.<br>Staff only.";
     }
 
     langSelect.addEventListener('change', function() {
