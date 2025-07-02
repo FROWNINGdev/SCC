@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>SCC | Face Recognition</title>
+    <style>
+        body, html {
+            background: #101624;
+            color: #e0e6ed;
+            margin: 0;
+            font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
+            letter-spacing: 0.01em;
+            height: 100%;
+            min-height: 100vh;
+            overflow-x: hidden;
+            /* Красивый скроллбар */
+            scrollbar-width: thin;
+            scrollbar-color: #2a4d9b #101624;
+        }
+        /* Для Chrome, Edge, Safari */
+        ::-webkit-scrollbar {
+            width: 10px;
+            background: #101624;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #2a4d9b 40%, #162a4d 100%);
+            border-radius: 8px;
+            min-height: 40px;
+            box-shadow: 0 2px 8px #2a4d9b44;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #3a6ddb 60%, #223a6b 100%);
+        }
+        ::-webkit-scrollbar-corner {
+            background: #101624;
+        }
+        .mosaic-bg {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .mosaic-tile {
+            position: absolute;
+            border-radius: 18px;
+            opacity: 0.22;
+            filter: grayscale(0.1) blur(0.5px) brightness(1.08);
+            box-shadow: 0 4px 32px #2a4d9b44;
+            transition: opacity 0.5s, transform 0.7s;
+            border: 2.5px solid #2a4d9b33;
+            object-fit: cover;
+        }
+        .mosaic-tile.square {
+            background: linear-gradient(135deg, #162a4d 60%, #223a6b 100%);
+            opacity: 0.18;
+            border: 2.5px solid #223a6b55;
+        }
+        .mosaic-decor {
+            position: absolute;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #2a4d9b55 0%, #10162400 80%);
+            pointer-events: none;
+            z-index: 1;
+        }
+        .sidebar {
+            width: 320px;
+            background: linear-gradient(180deg, #18223a 0%, #101624 100%);
+            height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+            padding: 38px 22px 22px 22px;
+            border-right: 2px solid #1a2233;
+            box-sizing: border-box;
+            box-shadow: 2px 0 16px 0 #0a0e18;
+            z-index: 20;
+            transition: transform 0.35s cubic-bezier(.77,0,.18,1), box-shadow 0.3s;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .sidebar.closed {
+            transform: translateX(-100%);
+            box-shadow: none;
+        }
+        .sidebar .logo {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            gap: 12px;
+        }
+        .sidebar .logo img {
+            width: 44px;
+            border-radius: 10px;
+            background: #0e1a2b;
+            box-shadow: 0 0 8px #2a4d9b44;
+        }
+        .sidebar h1 {
+            font-size: 1.18em;
+            margin: 0 0 4px 0;
+            color: #7ecfff;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+        .sidebar h2 {
+            font-size: 1em;
+            margin: 0 0 10px 0;
+            color: #b7c9e6;
+            font-weight: 400;
+        }
+        .sidebar label {
+            display: block;
+            margin: 14px 0 6px 0;
+            font-size: 0.98em;
+            color: #8bb3e6;
+        }
+        .sidebar select, .sidebar input {
+            width: 100%;
+            padding: 9px 10px;
+            border-radius: 9px;
+            border: 1.5px solid #22304a;
+            background: #151e2e;
+            color: #e0e6ed;
+            margin-bottom: 8px;
+            font-size: 1em;
+            transition: border 0.2s, box-shadow 0.2s;
+            margin-top: 0;
+        }
+        .sidebar select:focus, .sidebar input:focus {
+            border: 1.5px solid #2a4d9b;
+            outline: none;
+            box-shadow: 0 0 0 2px #2a4d9b33;
+        }
+        .sidebar .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .sidebar button {
+            flex: 1 1 0;
+            background: linear-gradient(90deg, #2a4d9b 60%, #1a2233 100%);
+            color: #fff;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 9px;
+            padding: 10px 0;
+            margin: 0;
+            box-shadow: 0 0 8px #2a4d9b33;
+            letter-spacing: 0.04em;
+            font-size: 1em;
+            transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
+        }
+        .sidebar button:hover {
+            background: #18306B;
+            box-shadow: 0 0 16px #2a4d9b99, 0 0 2px #fff;
+            transform: translateY(-2px) scale(1.04);
+        }
+        .sidebar .info-block {
+            background: #151e2e;
+            border-radius: 10px;
+            margin-top: 10px;
+            padding: 12px 14px 10px 14px;
+            font-size: 0.98em;
+            color: #b7c9e6;
+            box-shadow: 0 2px 8px #0a0e1833;
+        }
+        .sidebar .info-block strong {
+            color: #7ecfff;
+            font-weight: 500;
+        }
+        .sidebar-toggle {
+            position: fixed;
+            top: 32px;
+            left: 320px;
+            z-index: 30;
+            background: #18223a;
+            border: none;
+            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 8px #2a4d9b33;
+            transition: background 0.2s, left 0.35s cubic-bezier(.77,0,.18,1);
+        }
+        .sidebar.closed ~ .sidebar-toggle {
+            left: 14px;
+            background: #2a4d9b;
+        }
+        .sidebar-toggle .bar {
+            display: block;
+            width: 26px;
+            height: 3.5px;
+            background: #7ecfff;
+            margin: 4px 0;
+            border-radius: 2px;
+            transition: all 0.3s;
+        }
+        .sidebar-toggle .bar:nth-child(2) {
+            width: 18px;
+        }
+        .sidebar.closed ~ .sidebar-toggle .bar {
+            background: #fff;
+        }
+        .main {
+            margin-left: 320px;
+            padding: 48px 0 0 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            z-index: 2;
+            transition: margin-left 0.35s cubic-bezier(.77,0,.18,1);
+        }
+        .sidebar.closed ~ .main {
+            /* margin-left не меняем, чтобы блок с камерой оставался на месте */
+            /* margin-left: 0; */
+        }
+        .video-box {
+            background: linear-gradient(180deg, #18223a 0%, #101624 100%);
+            border-radius: 22px;
+            box-shadow: 0 4px 32px 0 #2a4d9b22;
+            padding: 38px 38px 28px 38px;
+            margin-top: 32px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 480px;
+            border: 1.5px solid #2a4d9b33;
+            /* Фиксированное позиционирование по центру экрана */
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 5;
+        }
+        .video-box h2 {
+            color: #7ecfff;
+            margin-bottom: 22px;
+            font-size: 2em;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }
+        #videoStream {
+            border-radius: 16px;
+            box-shadow: 0 0 16px #2a4d9b33;
+            border: 2px solid #22304a;
+            background: #0e1a2b;
+        }
+        #videoMsg {
+            margin-top: 18px;
+            color: #ffb300;
+            font-size: 1em;
+            min-height: 22px;
+            text-align: center;
+        }
+        #videoMsg.error {
+            color: #ff4d4d;
+            font-weight: 600;
+            text-shadow: 0 0 4px #ff4d4d44;
+        }
+        #videoMsg.success {
+            color: #7ecfff;
+            font-weight: 500;
+        }
+        .footer {
+            position: fixed;
+            bottom: 10px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 14px;
+            color: #7ecfff;
+            background: transparent;
+            letter-spacing: 0.03em;
+            z-index: 20;
+            user-select: none;
+        }
+        .footer img {
+            vertical-align: middle;
+            margin-right: 6px;
+            border-radius: 8px;
+            box-shadow: 0 0 8px #2a4d9b44;
+        }
+        .footer .slogan {
+            color: #b7c9e6;
+            font-size: 13px;
+            margin-left: 8px;
+        }
+        @media (max-width: 1100px) {
+            .main { margin-left: 0; }
+            .sidebar { position: fixed; width: 90vw; }
+            .sidebar-toggle { left: 14px !important; }
+            .video-box {
+                min-width: unset; width: 98vw;
+                left: 50%; top: 50%; transform: translate(-50%, -50%);
+            }
+        }
+        @media (max-width: 700px) {
+            .video-box { padding: 12px 2vw 12px 2vw; }
+            .sidebar { padding: 18px 6vw 18px 6vw; }
+        }
+    </style>
+</head>
+<body>
+<div class="mosaic-bg" id="mosaicBg"></div>
+<div class="mosaic-decor" style="top:10%;left:60%;width:220px;height:220px;"></div>
+<div class="mosaic-decor" style="top:65%;left:70%;width:160px;height:160px;"></div>
+<div class="sidebar" id="sidebar">
+    <div class="logo">
+        <img src="../static/image/logo.png" alt="SCC Logo">
+        <span style="font-weight:600;font-size:1.13em;letter-spacing:0.04em;">Безопасный город SCC</span>
+    </div>
+    <h1>Безопасный город SCC</h1>
+    <h2>Программа для распознавания лица</h2>
+    <label for="lang">Язык / Language</label>
+    <select id="lang">
+        <option value="RU">RU</option>
+        <option value="UZ">UZ</option>
+        <option value="EN">EN</option>
+    </select>
+    <label for="mode" id="videoSourceLabel">Источник видео</label>
+    <select id="mode">
+        <option value="local">Локальная камера</option>
+        <option value="ip">IP-камера</option>
+    </select>
+    <input type="text" id="ip_url" placeholder="http://IP:PORT/video" style="display:none;">
+    <div class="btn-group">
+        <button id="startBtn">Старт</button>
+        <button id="stopBtn" style="display:none;">Стоп</button>
+    </div>
+    <div class="info-block">
+        <div><strong>Статус сервера:</strong> <span id="serverStatus">🟢 Активен</span></div>
+        <div><strong>IP сервера:</strong> <span id="serverIp">192.168.1.10</span></div>
+        <div><strong>SSL:</strong> <span id="sslStatus">Включён</span></div>
+        <div style="margin-top:8px;font-size:0.93em;color:#8bb3e6;">Все действия логируются.<br>Доступ только для сотрудников.</div>
+    </div>
+</div>
+<button class="sidebar-toggle" id="sidebarToggle" aria-label="Открыть/закрыть меню">
+    <span class="bar"></span>
+    <span class="bar"></span>
+    <span class="bar"></span>
+</button>
+<div class="main" id="mainContent">
+    <div class="video-box">
+        <h2 id="videoTitle">Камера</h2>
+        <img id="videoStream" src="" width="640" style="display:none; border-radius: 12px;"/>
+        <div id="videoMsg"></div>
+    </div>
+</div>
+<div class="footer">
+    <a href="https://scc.uz/" target="_blank">
+        <img src="../static/image/logo.png" width="26" alt="SCC Logo">
+        SCC | <span style="color:#7ecfff;">https://scc.uz</span>
+    </a>
+    <span class="slogan">Безопасный город — Защищаем будущее SCC</span>
+    <br>
+    Автор: Абалкулов Амаль | <a href="https://t.me/FROWNINGnrx" target="_blank" style="color:#7ecfff;">@FROWNINGnrx</a>
+</div>
+<script>
+    // --- Мозаика: шахматный порядок с пустыми синими квадратами ---
+    const mosaicImages = [
+        "image.png", "image_1.png", "image_2.png", "image_3.png", "image_4.png",
+        "image_5.png", "image_6.png", "image_7.png", "image_8.png", "image_9.png",
+        "image_10.png", "image_11.png"
+    ];
+    // 7x4 сетка, равномерно по всему экрану
+    const gridRows = 4, gridCols = 7;
+    const tileW = Math.floor(window.innerWidth / (gridCols + 1));
+    const tileH = Math.floor(window.innerHeight / (gridRows + 1));
+    const gapX = Math.floor(tileW * 0.15);
+    const gapY = Math.floor(tileH * 0.15);
+    const startX = 0;
+    const startY = 0;
+    let imgIdx = 0;
+    const mosaicBg = document.getElementById('mosaicBg');
+    for (let row = 0; row < gridRows; row++) {
+        for (let col = 0; col < gridCols; col++) {
+            // Шахматный порядок: если (row+col)%2==0 - фото, иначе квадрат
+            let isPhoto = (row + col) % 2 === 0 && imgIdx < mosaicImages.length;
+            const tile = document.createElement(isPhoto ? 'img' : 'div');
+            tile.className = 'mosaic-tile' + (isPhoto ? '' : ' square');
+            let left = startX + col * (tileW + gapX);
+            let top = startY + row * (tileH + gapY);
+            tile.style.left = left + "px";
+            tile.style.top = top + "px";
+            tile.style.width = tileW + "px";
+            tile.style.height = tileH + "px";
+            tile.style.zIndex = 1;
+            tile.style.borderRadius = "18px";
+            if (isPhoto) {
+                tile.src = `../static/image/${mosaicImages[imgIdx++]}`;
+                // Легкая анимация "дыхания"
+                setInterval(() => {
+                    tile.style.opacity = 0.15 + 0.18 * Math.abs(Math.sin(Date.now()/3000 + row*col));
+                }, 1800 + Math.random()*1000);
+            }
+            mosaicBg.appendChild(tile);
+        }
+    }
+
+    // Динамическая боковая панель
+    const sidebar = document.getElementById('sidebar');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const mainContent = document.getElementById('mainContent');
+    let sidebarOpen = true;
+    function updateSidebarTogglePos() {
+        if (sidebarOpen) {
+            sidebarToggle.style.left = (sidebar.offsetWidth + 8) + 'px';
+        } else {
+            sidebarToggle.style.left = '14px';
+        }
+    }
+    sidebarToggle.onclick = function() {
+        sidebarOpen = !sidebarOpen;
+        if (sidebarOpen) {
+            sidebar.classList.remove('closed');
+            mainContent.style.marginLeft = '320px';
+        } else {
+            sidebar.classList.add('closed');
+            mainContent.style.marginLeft = '0';
+        }
+        updateSidebarTogglePos();
+    };
+    window.addEventListener('resize', updateSidebarTogglePos);
+    window.addEventListener('DOMContentLoaded', updateSidebarTogglePos);
+
+    const modeSelect = document.getElementById('mode');
+    const ipInput = document.getElementById('ip_url');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const videoStream = document.getElementById('videoStream');
+    const videoMsg = document.getElementById('videoMsg');
+    const videoTitle = document.getElementById('videoTitle');
+    const serverStatus = document.getElementById('serverStatus');
+    const serverIp = document.getElementById('serverIp');
+    const sslStatus = document.getElementById('sslStatus');
+    const langSelect = document.getElementById('lang');
+    const videoSourceLabel = document.getElementById('videoSourceLabel');
+
+    // Для мультиязычности
+    const translations = {
+        "RU": {
+            "main_title": "Безопасный город SCC",
+            "app_title": "Программа для распознавания лица",
+            "video_source": "Источник видеопотока",
+            "local_camera": "Локальная камера",
+            "ip_camera": "IP-камера",
+            "ip_prompt": "http://IP:PORT/video",
+            "start": "Старт",
+            "stop": "Стоп",
+            "ip_warning": "Введите адрес IP-камеры!",
+            "stream_on": "Видеопоток активен",
+            "stream_off": "Видеопоток остановлен",
+            "connecting": "Подключение к видеопотоку...",
+            "main_slogan": "Безопасный город — Защищаем будущее SCC"
+        },
+        "UZ": {
+            "main_title": "Xavfsiz shahar SCC",
+            "app_title": "Yuzni aniqlash dasturi",
+            "video_source": "Video manbai",
+            "local_camera": "Mahalliy kamera",
+            "ip_camera": "IP-kamera",
+            "ip_prompt": "http://IP:PORT/video",
+            "start": "Boshlash",
+            "stop": "To'xtatish",
+            "ip_warning": "IP kamera manzilini kiriting!",
+            "stream_on": "Videopotok faol",
+            "stream_off": "Videopotok to'xtatildi",
+            "connecting": "Videopotokga ulanmoqda...",
+            "main_slogan": "Xavfsiz shahar — SCC kelajagini himoya qilamiz"
+        },
+        "EN": {
+            "main_title": "Safe City SCC",
+            "app_title": "Face Recognition Program",
+            "video_source": "Video Source",
+            "local_camera": "Local Camera",
+            "ip_camera": "IP Camera",
+            "ip_prompt": "http://IP:PORT/video",
+            "start": "Start",
+            "stop": "Stop",
+            "ip_warning": "Enter IP camera address!",
+            "stream_on": "Video stream active",
+            "stream_off": "Video stream stopped",
+            "connecting": "Connecting to video stream...",
+            "main_slogan": "Safe City — Securing SCC's Future"
+        }
+    };
+
+    function updateLangUI() {
+        const lang = langSelect.value;
+        document.querySelector('.logo span').innerText = translations[lang].main_title;
+        document.querySelector('h1').innerText = translations[lang].main_title;
+        document.querySelector('h2').innerText = translations[lang].app_title;
+        videoSourceLabel.innerText = translations[lang].video_source;
+        modeSelect.options[0].text = translations[lang].local_camera;
+        modeSelect.options[1].text = translations[lang].ip_camera;
+        ipInput.placeholder = translations[lang].ip_prompt;
+        startBtn.innerText = translations[lang].start;
+        stopBtn.innerText = translations[lang].stop;
+        document.querySelector('.footer .slogan').innerText = translations[lang].main_slogan;
+        // Заголовок камеры всегда статичен
+        videoTitle.innerText = "Камера";
+    }
+
+    langSelect.addEventListener('change', function() {
+        updateLangUI();
+    });
+
+    modeSelect.addEventListener('change', function() {
+        if (modeSelect.value === 'ip') {
+            ipInput.style.display = '';
+        } else {
+            ipInput.style.display = 'none';
+        }
+        // videoTitle.innerText = "Камера"; // всегда статичен
+    });
+
+    let streamUrl = '';
+    let streaming = false;
+
+    startBtn.onclick = function() {
+        let lang = langSelect.value;
+        let mode = modeSelect.value;
+        let ip_url = ipInput.value.trim();
+        if (mode === 'ip' && !ip_url) {
+            videoMsg.innerText = translations[lang].ip_warning;
+            videoMsg.className = 'error';
+            return;
+        }
+        videoMsg.innerText = translations[lang].connecting;
+        videoMsg.className = '';
+        let params = new URLSearchParams();
+        params.append('source', mode);
+        if (mode === 'ip') params.append('ip_url', ip_url);
+        streamUrl = 'https://192.168.1.10:8000/video/?' + params.toString();
+        videoStream.src = streamUrl;
+        videoStream.style.display = '';
+        streaming = true;
+        startBtn.style.display = 'none';
+        stopBtn.style.display = '';
+        setTimeout(() => {
+            videoMsg.innerText = translations[lang].stream_on;
+            videoMsg.className = 'success';
+        }, 1200);
+    };
+
+    stopBtn.onclick = function() {
+        let lang = langSelect.value;
+        videoStream.src = '';
+        videoStream.style.display = 'none';
+        streaming = false;
+        startBtn.style.display = '';
+        stopBtn.style.display = 'none';
+        videoMsg.innerText = translations[lang].stream_off;
+        videoMsg.className = '';
+    };
+
+    // Инициализация языка при загрузке
+    updateLangUI();
+</script>
+</body>
+</html>

@@ -1,6 +1,0 @@
-[server]
-headless = true
-port = 8000
-enableCORS = false
-enableXsrfProtection = false
-address = "192.168.31.148"

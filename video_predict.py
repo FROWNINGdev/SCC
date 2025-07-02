@@ -1,4 +1,7 @@
-import streamlit as st
+from fastapi import FastAPI, UploadFile, File, Form, Query
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import cv2
 import numpy as np
 import face_recognition
@@ -6,94 +9,34 @@ from src.face_detector import YOLOv5
 from src.FaceAntiSpoofing import AntiSpoof
 import os
 import json
-import base64
-from PIL import Image
+from typing import Optional
+from io import BytesIO
+from urllib.parse import unquote
 
-# Настройка страницы
-st.set_page_config(page_title="SCC | Face Recognition", layout="wide")
+app = FastAPI(
+    title="SCC | Face Recognition",
+    description="API для распознавания лиц и антиспуфинга",
+    version="1.0"
+)
+
+# Разрешаем CORS для фронта
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Загрузка переводов
-with open("lang.json", "r", encoding="utf-8") as f:
+with open("static/lang.json", "r", encoding="utf-8") as f:
     translations = json.load(f)
 
-# ===== CSS =====
-st.markdown("""
-    <style>
-    .footer {
-        position: fixed;
-        bottom: 12px;
-        width: 100%;
-        text-align: center;
-        font-size: 14px;
-        color: gray;
-    }
-    .footer img {
-        vertical-align: middle;
-        margin-right: 6px;
-        border-radius: 8px;
-    }
-    section[data-testid="stSidebar"] {
-        background-color: transparent !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# ===== Боковая панель (только язык и режим) =====
-with st.sidebar:
-    lang = st.selectbox(
-        label="Language",
-        options=["RU", "UZ", "EN"],
-        index=0,
-        key="lang_select",
-        label_visibility="collapsed"
-    )
-    T = translations[lang]
-
-    st.markdown(f"### {T['video_source']}")
-    mode = st.radio(
-        T["choose_mode"],
-        [T["local_camera"], T["ip_camera"]],
-        index=0
-    )
-
-# ===== Заголовок =====
-st.title(T["app_title"])
-
-# ===== Подвал (footer): логотип, автор, Telegram =====
-logo_path = "static/image/logo.png"
-if os.path.exists(logo_path):
-    with open(logo_path, "rb") as f:
-        logo_data = base64.b64encode(f.read()).decode()
-
-    st.markdown(
-        f"""
-        <div class="footer">
-            <a href="https://scc.uz/" target="_blank">
-                <img src="data:image/png;base64,{logo_data}" width="26" alt="SCC Logo">
-                SCC | https://scc.uz
-            </a>
-            <br>
-            Автор: Абалкулов Амаль | <a href="https://t.me/FROWNINGnrx" target="_blank">@FROWNINGnrx</a>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-else:
-    st.markdown(
-        """
-        <div class="footer">
-            SCC | https://scc.uz<br>
-            Автор: Абалкулов Амаль | <a href="https://t.me/FROWNINGnrx" target="_blank">@FROWNINGnrx</a>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-# ===== Загрузка моделей =====
+# Загрузка моделей
 face_detector = YOLOv5('saved_models/yolov5s-face.onnx')
 anti_spoof = AntiSpoof('saved_models/AntiSpoofing_bin_1.5_128.onnx')
 
-# ===== Загрузка известных лиц =====
+# Загрузка известных лиц
 known_face_encodings = []
 known_face_names = []
 student_db_path = "face_db"
@@ -107,7 +50,6 @@ for filename in os.listdir(student_db_path):
             name = os.path.splitext(filename)[0]
             known_face_names.append(name)
 
-# ===== Кадрирование =====
 def increased_crop(img, bbox, bbox_inc=1.5):
     real_h, real_w = img.shape[:2]
     x, y, w, h = bbox
@@ -121,7 +63,6 @@ def increased_crop(img, bbox, bbox_inc=1.5):
     crop = cv2.copyMakeBorder(crop, y1 - y, int(l * bbox_inc - y2 + y), x1 - x, int(l * bbox_inc - x2 + x), cv2.BORDER_CONSTANT, value=[0, 0, 0])
     return crop
 
-# ===== Распознавание =====
 def recognize_face(img):
     rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     faces_enc = face_recognition.face_encodings(rgb_img)
@@ -134,56 +75,180 @@ def recognize_face(img):
         return known_face_names[np.argmin(distances)]
     return None
 
-# ===== Обработка кадра =====
-def process_frame(frame, threshold=0.5):
+def get_eye_distance(img):
+    rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    landmarks_list = face_recognition.face_landmarks(rgb_img)
+    if not landmarks_list:
+        return None
+    landmarks = landmarks_list[0]
+    if "left_eye" in landmarks and "right_eye" in landmarks:
+        left_eye = np.mean(landmarks["left_eye"], axis=0)
+        right_eye = np.mean(landmarks["right_eye"], axis=0)
+        return np.linalg.norm(np.array(left_eye) - np.array(right_eye))
+    return None
+
+def process_frame(frame, threshold=0.5, eye_dist_thresh=40):
     img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     bbox = face_detector([img_rgb])[0]
     if bbox.shape[0] == 0:
         return frame
     bbox = bbox.flatten()[:4].astype(int)
     face_crop = increased_crop(img_rgb, bbox)
-    pred = anti_spoof([face_crop])[0]
-    score = pred[0][0]
-    label = np.argmax(pred)
 
-    if label == 0 and score > threshold:
-        name = recognize_face(face_crop) or "Unrecognized"
-        label_text = f"REAL [{name}] ({score:.2f})"
-        color = (0, 255, 0)
-    elif label == 1:
-        label_text = f"FAKE ({score:.2f})"
-        color = (0, 0, 255)
+    # Сначала считаем расстояние между глазами
+    eye_dist = get_eye_distance(face_crop)
+
+    if eye_dist is not None and eye_dist < eye_dist_thresh:
+        label_text = f"TOO CLOSE (Eyes: {eye_dist:.1f})"
+        color = (0, 165, 255)
     else:
-        label_text = "UNKNOWN"
-        color = (127, 127, 127)
+        # Только если лицо не слишком близко — антиспуфинг
+        pred = anti_spoof([face_crop])[0]
+        score = pred[0][0]
+        label = np.argmax(pred)
+
+        if label == 0 and score > threshold:
+            name = recognize_face(face_crop) or "Unrecognized"
+            label_text = f"REAL [{name}] ({score:.2f})"
+            color = (0, 255, 0)
+        elif label == 1:
+            label_text = f"FAKE ({score:.2f})"
+            color = (0, 0, 255)
+        else:
+            label_text = "UNKNOWN"
+            color = (127, 127, 127)
 
     cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, 2)
     cv2.putText(frame, label_text, (bbox[0], bbox[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
     return frame
 
-# ===== Центр экрана =====
-left, center, right = st.columns([1, 3, 1])
-with center:
-    st.subheader(mode)
-    if mode == T["local_camera"]:
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-    else:
-        ip_url = st.text_input(T["ip_prompt"], placeholder="http://IP:PORT/video")
-        if not ip_url:
-            st.warning(T["ip_warning"])
-            st.stop()
-        cap = cv2.VideoCapture(ip_url)
-
-    FRAME_WINDOW = st.image([], width=640)
-
-# ===== Обработка потока =====
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        st.warning("Не удалось захватить видео с источника")
-        break
-    frame = cv2.resize(frame, (640, 480), interpolation=cv2.INTER_LINEAR)
+@app.post("/predict/")
+async def predict(file: UploadFile = File(...)):
+    contents = await file.read()
+    npimg = np.frombuffer(contents, np.uint8)
+    frame = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
     processed = process_frame(frame)
-    FRAME_WINDOW.image(processed, channels="BGR")
+    _, img_encoded = cv2.imencode('.jpg', processed)
+    return StreamingResponse(BytesIO(img_encoded.tobytes()), media_type="image/jpeg")
 
-cap.release()
+@app.post("/recognize/")
+async def recognize(file: UploadFile = File(...)):
+    contents = await file.read()
+    npimg = np.frombuffer(contents, np.uint8)
+    frame = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+    name = recognize_face(frame)
+    return JSONResponse({"name": name})
+
+@app.get("/video/")
+async def video_stream(
+    source: str = Query("local"),
+    ip_url: Optional[str] = Query(None)
+):
+    import time
+    import requests
+
+    cap = None
+    is_ip = False
+    error_msg = None
+
+    if source == "local":
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        is_ip = False
+        if not cap.isOpened():
+            error_msg = "Локальная камера не найдена или занята другим приложением."
+    else:
+        if not ip_url:
+            return JSONResponse({"error": "IP camera URL required"}, status_code=400)
+        # Удаляем пробелы и плюсы, декодируем url
+        ip_url_clean = unquote(ip_url).strip().replace('+', '')
+        print(f"Попытка подключения к IP-камере: {ip_url_clean}")
+        cap = cv2.VideoCapture(ip_url_clean)
+        is_ip = True
+        if not cap.isOpened():
+            # Попробуем получить кадр через HTTP-запрос (например, /shot.jpg)
+            cap = None
+            try:
+                url = ip_url_clean
+                if url.endswith("/video"):
+                    url = url.replace("/video", "/shot.jpg")
+                elif not url.endswith(".jpg"):
+                    url = url.rstrip("/") + "/shot.jpg"
+                print(f"Попытка получить кадр по HTTP: {url}")
+                resp = requests.get(url, timeout=2)
+                arr = np.asarray(bytearray(resp.content), dtype=np.uint8)
+                test_frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if test_frame is None:
+                    error_msg = "IP-камера не отвечает или не поддерживает поток/кадры."
+            except Exception as e:
+                error_msg = f"Ошибка подключения к IP-камере: {e}"
+
+    if error_msg:
+        # Вернуть ошибку в виде изображения с текстом
+        def error_gen():
+            img = np.zeros((360, 480, 3), dtype=np.uint8)
+            cv2.putText(img, "Ошибка:", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0,0,255), 3)
+            y = 160
+            for line in error_msg.split('\n'):
+                cv2.putText(img, line, (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
+                y += 40
+            _, buffer = cv2.imencode('.jpg', img)
+            while True:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                time.sleep(1)
+        return StreamingResponse(error_gen(), media_type='multipart/x-mixed-replace; boundary=frame')
+
+    def gen():
+        last_frame = None
+        while True:
+            frame = None
+            if not is_ip or (cap and cap.isOpened()):
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    break
+            else:
+                try:
+                    url = unquote(ip_url).strip().replace('+', '')
+                    if url.endswith("/video"):
+                        url = url.replace("/video", "/shot.jpg")
+                    elif not url.endswith(".jpg"):
+                        url = url.rstrip("/") + "/shot.jpg"
+                    resp = requests.get(url, timeout=2)
+                    arr = np.asarray(bytearray(resp.content), dtype=np.uint8)
+                    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if frame is None:
+                        break
+                except Exception:
+                    break
+            if frame is None:
+                break
+            frame = cv2.resize(frame, (480, 360), interpolation=cv2.INTER_LINEAR)
+            processed = process_frame(frame)
+            _, buffer = cv2.imencode('.jpg', processed)
+            last_frame = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + last_frame + b'\r\n')
+            time.sleep(0.04)  # ~25 fps
+        if cap:
+            cap.release()
+
+    return StreamingResponse(gen(), media_type='multipart/x-mixed-replace; boundary=frame')
+
+# Подключаем папку static для логотипа и других файлов
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Отдаём frontend при обращении к корню
+@app.get("/")
+async def root():
+    return FileResponse("frontend/index.html")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "video_predict:app",
+        host="192.168.1.10",
+        port=8000,
+        reload=False,
+        ssl_keyfile="OpenSSL/key.pem",
+        ssl_certfile="OpenSSL/cert.pem"
+    )

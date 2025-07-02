@@ -1,0 +1,35 @@
+{
+  "RU": {
+    "app_title": "Программа для распознавания лица",
+    "video_source": "Источник видеопотока",
+    "choose_mode": "Выберите режим:",
+    "local_camera": "Локальная камера",
+    "ip_camera": "IP-камера",
+    "ip_prompt": "http://IP:PORT/video",
+    "ip_warning": "Введите адрес IP-камеры!",
+    "main_title": "Безопасный город SCC",
+    "main_slogan": "Безопасный город — Защищаем будущее SCC"
+  },
+  "UZ": {
+    "app_title": "Yuzni aniqlash dasturi",
+    "video_source": "Video manbai",
+    "choose_mode": "Rejimni tanlang:",
+    "local_camera": "Mahalliy kamera",
+    "ip_camera": "IP-kamera",
+    "ip_prompt": "http://IP:PORT/video",
+    "ip_warning": "IP kamera manzilini kiriting!",
+    "main_title": "Xavfsiz shahar SCC",
+    "main_slogan": "Xavfsiz shahar — SCC kelajagini himoya qilamiz"
+  },
+  "EN": {
+    "app_title": "Face Recognition Program",
+    "video_source": "Video Source",
+    "choose_mode": "Choose Mode:",
+    "local_camera": "Local Camera",
+    "ip_camera": "IP Camera",
+    "ip_prompt": "http://IP:PORT/video",
+    "ip_warning": "Enter IP camera address!",
+    "main_title": "Safe City SCC",
+    "main_slogan": "Safe City — Securing SCC's Future"
+  }
+}
